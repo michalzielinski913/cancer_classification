@@ -1,46 +1,43 @@
-import time
-from sklearn.inspection import permutation_importance
-from sklearn.ensemble import RandomForestClassifier
 import pandas as pd
-from sklearn.datasets import make_classification
+import numpy as np
+from sklearn.feature_selection import SelectKBest, f_classif,f_regression
 from sklearn.model_selection import train_test_split
 
+def train_validate_split(df, target_col="histopathology", train_percent=.8, validate_percent=.2, seed=42):
+    # Calculate the train and validate size
+    train_size = train_percent / (train_percent + validate_percent)
 
-df=pd.read_csv("../cancer_classification/cancer_cleaned.csv", sep=";")
-y=df['histopathology'].values
-x=df[df.columns[2:]].to_numpy()
+    # Split the dataframe into training and validation sets, stratifying on the target column
+    train_df, validate_df = train_test_split(df, train_size=train_size, random_state=seed, stratify=df[target_col])
 
-feature_names= (df.columns.to_numpy())[2:]
-feature_names=[feature.replace("original_", "") for feature in feature_names]
+    return train_df, validate_df
 
-X_train, X_test, y_train, y_test = train_test_split(x, y, stratify=y, random_state=42)
-forest = RandomForestClassifier(random_state=0)
-forest.fit(X_train, y_train)
+def select_k_best_features(df, k):
+    # Separate the features and labels
+    X = df.drop(columns=["histopathology"])
+    y = df["histopathology"]
+
+    # Apply SelectKBest with f_classif scoring function
+    selector = SelectKBest(score_func=f_classif, k=k)
+
+    # Fit the selector to the data
+    selector.fit(X, y)
+
+    # Get the names of the selected features
+    mask = selector.get_support()
+    feature_names = X.columns[mask]
+    return feature_names
+
+# Usage:
+feature_names = select_k_best_features
 
 
-start_time = time.time()
-result = permutation_importance(
-    forest, X_test, y_test, n_repeats=10, random_state=42, n_jobs=2
-)
-elapsed_time = time.time() - start_time
-print(f"Elapsed time to compute the importances: {elapsed_time:.3f} seconds")
-import matplotlib.pyplot as plt
-forest_importances = pd.Series(result.importances_mean, index=feature_names)
-fig, ax = plt.subplots(figsize=(20, 10))
-forest_importances.plot.bar(yerr=result.importances_std, ax=ax)
-ax.set_title("Feature importances using permutation on full model")
-ax.set_ylabel("Mean accuracy decrease")
-fig.tight_layout()
-plt.show()
-res=[]
-for i, feature in enumerate(result.importances_mean):
-    if feature>0.01:
-        res.append(i+2)
-print(len(res))
+df=pd.read_csv("Data/cancer_cleaned.csv", sep=",")
+y = df["histopathology"]
 
-x_extract=df[df.columns[res]]
-print(x_extract.head())
+train_df, validate_df=train_validate_split(df)
+feature_names = select_k_best_features(train_df, k=16)
+df_new = pd.DataFrame(df, columns=feature_names)
+df_new["histopathology"] = y.values
 
-x_extract[df['histopathology'].name] = df['histopathology']
-
-x_extract.to_csv("export.csv", index=False)
+df_new.to_csv("Data/export.csv", index=False)
