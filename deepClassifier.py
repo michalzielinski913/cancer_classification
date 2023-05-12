@@ -13,6 +13,23 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import confusion_matrix, classification_report
 
+class EarlyStopper:
+    def __init__(self, patience=1, min_delta=0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.min_train_loss = np.inf
+
+    def early_stop(self, train_loss):
+        if train_loss < self.min_train_loss:
+            self.min_train_loss = train_loss
+            self.counter = 0
+        elif train_loss > (self.min_train_loss + self.min_delta):
+            self.counter += 1
+            if self.counter >= self.patience:
+                return True
+        return False
+
 class BinaryClassification(nn.Module):
     def __init__(self):
         super(BinaryClassification, self).__init__()
@@ -79,6 +96,7 @@ def trainingLoop(train_loader, model):
     n_epochs = 200
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    early_stopper = EarlyStopper(patience=2, min_delta=0.01)
 
     for epoch in range(n_epochs):
         epoch_loss = 0
@@ -98,7 +116,10 @@ def trainingLoop(train_loader, model):
             optimizer.step()
             epoch_loss += loss.item()
             epoch_acc += acc.item()
-            print(f'Epoch {epoch+0:03}: | Loss: {epoch_loss/len(train_loader):.5f} | Acc: {epoch_acc/len(train_loader):.3f}')
+        print(f'Epoch {epoch+0:03}: | Loss: {epoch_loss/len(train_loader):.5f} | Acc: {epoch_acc/len(train_loader):.3f}')
+        if early_stopper.early_stop(epoch_loss):             
+            break
+            
 
 def test_model(test_loader, model):
     y_pred_list = []
