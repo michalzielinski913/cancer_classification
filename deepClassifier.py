@@ -86,13 +86,7 @@ def trainingLoop(train_loader, model):
         for features, label in train_loader:
             label = label.unsqueeze(1)
             # features, label = features.to(device), label.to(device)
-            
-            # print(len(features))
-            # print(len(label))
-            # print(features.shape)
-            # print(label.shape)
-            # print(type(features))
-            # print(type(label))
+
             features = features.to(torch.float32)
             outputs = model(features)
 
@@ -150,4 +144,3 @@ trainingLoop(train_loader, model)
 preds = test_model(test_loader, model)
 
 print(confusion_matrix(y_val, preds))
-# print(classification_report(y_val, preds))
