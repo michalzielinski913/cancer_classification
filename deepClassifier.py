@@ -12,6 +12,7 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.utils import class_weight
 
 class EarlyStopper:
     def __init__(self, patience=1, min_delta=0):
@@ -85,18 +86,22 @@ def binary_acc(y_pred, y_test):
     
     return acc
 
-def trainingLoop(train_loader, model):
+def trainingLoop(train_loader, model, class_weights):
 
 
     learning_rate = 1e-2
 
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([2.2]), reduction='mean')
+    # criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+    # criterion= nn.CrossEntropyLoss(weight=class_weights,reduction='mean')
+    # loss_weighted = criterion_weighted(x, y)
 
     n_epochs = 200
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    early_stopper = EarlyStopper(patience=2, min_delta=0.01)
+    early_stopper = EarlyStopper(patience=1000, min_delta=0.01)
 
     for epoch in range(n_epochs):
         epoch_loss = 0
@@ -104,10 +109,11 @@ def trainingLoop(train_loader, model):
         for features, label in train_loader:
             label = label.unsqueeze(1)
             # features, label = features.to(device), label.to(device)
-
+            
             features = features.to(torch.float32)
             outputs = model(features)
-
+            # print(label.shape)
+            # print(outputs.shape)
             loss = criterion(outputs, label)
             acc = binary_acc(outputs, label)
 
@@ -159,9 +165,13 @@ test_data = TestData(torch.FloatTensor(X_val.to_numpy()))
 train_loader = DataLoader(dataset=train_data, batch_size=10, shuffle=True)
 test_loader = DataLoader(dataset=test_data, batch_size=1)
 
+class_weights=class_weight.compute_class_weight(class_weight='balanced',classes=np.unique(y_train),y = y_train.to_numpy())
+class_weights=torch.tensor(class_weights,dtype=torch.float)
+print(class_weights)
+
 model = BinaryClassification()
 
-trainingLoop(train_loader, model)
+trainingLoop(train_loader, model, class_weights)
 preds = test_model(test_loader, model)
 
 print(confusion_matrix(y_val, preds))
