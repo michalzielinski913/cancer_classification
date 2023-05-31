@@ -125,10 +125,10 @@ def trainingLoop(train_loader, model, class_weights):
             optimizer.step()
             epoch_loss += loss.item()
             epoch_acc += acc.item()
-        print(f'Epoch {epoch+0:03}: | Loss: {epoch_loss/len(train_loader):.5f} | Acc: {epoch_acc/len(train_loader):.3f}')
+        # print(f'Epoch {epoch+0:03}: | Loss: {epoch_loss/len(train_loader):.5f} | Acc: {epoch_acc/len(train_loader):.3f}')
         if early_stopper.early_stop(epoch_loss):             
             break
-    return epoch_acc/len(train_loader)
+    return (epoch_acc/len(train_loader))
             
 
 def test_model(test_loader, model):
@@ -146,10 +146,13 @@ def test_model(test_loader, model):
     return y_pred_list
 
 
+
+
 def objective(trial):
     n_features = trial.suggest_int('n_features', 1, 15)
-    class_weights = trial.suggest_float('class_weights', 0.001, 5)
+    class_weights = trial.suggest_float('class_weights', 0.001, 10)
     n_neurons = trial.suggest_int('n_neurons', 10, 200)
+    batch_size = trial.suggest_int('batch_size', 5, 50)
     
     X = df.drop(columns=["histopathology"])
     X = df.drop(df.iloc[:, n_features:], axis=1)
@@ -171,7 +174,7 @@ def objective(trial):
 
     test_data = TestData(torch.FloatTensor(X_val.to_numpy()))
 
-    train_loader = DataLoader(dataset=train_data, batch_size=10, shuffle=True)
+    train_loader = DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(dataset=test_data, batch_size=1)
 
     model = BinaryClassification(n_features, n_neurons)
@@ -179,10 +182,12 @@ def objective(trial):
     acc = trainingLoop(train_loader, model, class_weights)
     preds = test_model(test_loader, model)
     score = binary_acc(torch.FloatTensor(np.array(preds)), torch.FloatTensor(y_val.to_numpy()))
+    saved_models.append(model)
     report_data.append({
         'n_features': n_features,
         'n_neurons': n_neurons,
         'class_weights': class_weights,
+        'batch_size': batch_size,
         'train_accuracy': acc,
         'score': score,
     })
@@ -192,15 +197,42 @@ def objective(trial):
 
 if __name__ == '__main__':
     report_data = []
+    #models are very small so they can be kept in the memory
+    saved_models = []
     # Prepare the dataset
     df = pd.read_csv("Data/export.csv")
 
     study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler(seed=42))
-    study.optimize(objective, n_trials=20)
+    study.optimize(objective, n_trials=50)
     # Print the best parameters found
     print("Best parameters found: ", study.best_params)
+    best_model = saved_models[study.best_trial.number]
 
-    # cm = confusion_matrix(y_val, preds)
-    # disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-    # disp.plot()
-    # plt.show()
+    X = df.drop(columns=["histopathology"])
+    X = df.drop(df.iloc[:, study.best_trial.params['n_features']:], axis=1)
+    y = df["histopathology"]
+    mapa = {'SQUAMOUS': 1, 'OTHER': 0}
+    y = y.map(mapa)
+
+    print(X.shape)
+    # print(y.shape)
+    # print(y.value_counts())
+
+    # print(y)
+
+    # Split the dataset into train and validation sets
+    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+    train_data = TrainData(torch.FloatTensor(X_train.to_numpy()), 
+                        torch.FloatTensor(y_train.to_numpy()))
+
+    test_data = TestData(torch.FloatTensor(X_val.to_numpy()))
+
+    train_loader = DataLoader(dataset=train_data, batch_size=10, shuffle=True)
+    test_loader = DataLoader(dataset=test_data, batch_size=1)
+
+    preds = test_model(test_loader, best_model)
+    cm = confusion_matrix(y_val, preds)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+    disp.plot()
+    plt.show()
