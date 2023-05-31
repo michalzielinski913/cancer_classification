@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+import optuna
+
 #PyTorch
 import torch 
 import torch.nn as nn
@@ -33,17 +35,17 @@ class EarlyStopper:
         return False
 
 class BinaryClassification(nn.Module):
-    def __init__(self, n_features):
+    def __init__(self, n_features, n_neurons):
         super(BinaryClassification, self).__init__()
         # Number of input features is n
-        self.layer_1 = nn.Linear(n_features, 20) 
-        self.layer_2 = nn.Linear(20, 20)
-        self.layer_out = nn.Linear(20, 1) 
+        self.layer_1 = nn.Linear(n_features, n_neurons) 
+        self.layer_2 = nn.Linear(n_neurons, n_neurons)
+        self.layer_out = nn.Linear(n_neurons, 1) 
         
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=0.1)
-        self.batchnorm1 = nn.BatchNorm1d(20)
-        self.batchnorm2 = nn.BatchNorm1d(20)
+        self.batchnorm1 = nn.BatchNorm1d(n_neurons)
+        self.batchnorm2 = nn.BatchNorm1d(n_neurons)
         
     def forward(self, inputs):
         x = self.relu(self.layer_1(inputs))
@@ -92,7 +94,7 @@ def trainingLoop(train_loader, model, class_weights):
 
     learning_rate = 1e-3
 
-    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([0.65]), reduction='mean')
+    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([class_weights]), reduction='mean')
     # criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -102,7 +104,7 @@ def trainingLoop(train_loader, model, class_weights):
     n_epochs = 300
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    early_stopper = EarlyStopper(patience=10, min_delta=0.01)
+    early_stopper = EarlyStopper(patience=5, min_delta=0.01)
 
     for epoch in range(n_epochs):
         epoch_loss = 0
@@ -126,6 +128,7 @@ def trainingLoop(train_loader, model, class_weights):
         print(f'Epoch {epoch+0:03}: | Loss: {epoch_loss/len(train_loader):.5f} | Acc: {epoch_acc/len(train_loader):.3f}')
         if early_stopper.early_stop(epoch_loss):             
             break
+    return epoch_acc/len(train_loader)
             
 
 def test_model(test_loader, model):
@@ -143,43 +146,61 @@ def test_model(test_loader, model):
     return y_pred_list
 
 
+def objective(trial):
+    n_features = trial.suggest_int('n_features', 1, 15)
+    class_weights = trial.suggest_float('class_weights', 0.001, 5)
+    n_neurons = trial.suggest_int('n_neurons', 10, 200)
+    
+    X = df.drop(columns=["histopathology"])
+    X = df.drop(df.iloc[:, n_features:], axis=1)
+    y = df["histopathology"]
+    mapa = {'SQUAMOUS': 1, 'OTHER': 0}
+    y = y.map(mapa)
 
-# Prepare the dataset
-df = pd.read_csv("Data/export.csv")
+    print(X.shape)
+    # print(y.shape)
+    # print(y.value_counts())
 
-# X = df.drop(columns=["histopathology"])
-X = df.drop(df.iloc[:, 10:], axis=1)
-y = df["histopathology"]
-mapa = {'SQUAMOUS': 1, 'OTHER': 0}
-y = y.map(mapa)
+    # print(y)
 
-print(X.shape)
-print(y.shape)
-print(y.value_counts())
+    # Split the dataset into train and validation sets
+    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
-print(y)
+    train_data = TrainData(torch.FloatTensor(X_train.to_numpy()), 
+                        torch.FloatTensor(y_train.to_numpy()))
 
-# Split the dataset into train and validation sets
-X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+    test_data = TestData(torch.FloatTensor(X_val.to_numpy()))
 
-train_data = TrainData(torch.FloatTensor(X_train.to_numpy()), 
-                       torch.FloatTensor(y_train.to_numpy()))
+    train_loader = DataLoader(dataset=train_data, batch_size=10, shuffle=True)
+    test_loader = DataLoader(dataset=test_data, batch_size=1)
 
-test_data = TestData(torch.FloatTensor(X_val.to_numpy()))
+    model = BinaryClassification(n_features, n_neurons)
 
-train_loader = DataLoader(dataset=train_data, batch_size=10, shuffle=True)
-test_loader = DataLoader(dataset=test_data, batch_size=1)
+    acc = trainingLoop(train_loader, model, class_weights)
+    preds = test_model(test_loader, model)
+    score = binary_acc(torch.FloatTensor(np.array(preds)), torch.FloatTensor(y_val.to_numpy()))
+    report_data.append({
+        'n_features': n_features,
+        'n_neurons': n_neurons,
+        'class_weights': class_weights,
+        'train_accuracy': acc,
+        'score': score,
+    })
 
-class_weights=class_weight.compute_class_weight(class_weight='balanced',classes=np.unique(y_train),y = y_train.to_numpy())
-class_weights=torch.tensor(class_weights,dtype=torch.float)
-print(class_weights)
+    return score
 
-model = BinaryClassification(10)
 
-trainingLoop(train_loader, model, class_weights)
-preds = test_model(test_loader, model)
+if __name__ == '__main__':
+    report_data = []
+    # Prepare the dataset
+    df = pd.read_csv("Data/export.csv")
 
-cm = confusion_matrix(y_val, preds)
-disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-disp.plot()
-plt.show()
+    study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler(seed=42))
+    study.optimize(objective, n_trials=20)
+    # Print the best parameters found
+    print("Best parameters found: ", study.best_params)
+
+    # cm = confusion_matrix(y_val, preds)
+    # disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+    # disp.plot()
+    # plt.show()
