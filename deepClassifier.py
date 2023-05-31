@@ -1,6 +1,7 @@
 #Basic utility modules
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 #PyTorch
 import torch 
@@ -11,7 +12,7 @@ from torch.utils.data import Dataset, DataLoader
 #Utilities from sklearn
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import accuracy_score
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import confusion_matrix, classification_report, ConfusionMatrixDisplay
 from sklearn.utils import class_weight
 
 class EarlyStopper:
@@ -32,17 +33,17 @@ class EarlyStopper:
         return False
 
 class BinaryClassification(nn.Module):
-    def __init__(self):
+    def __init__(self, n_features):
         super(BinaryClassification, self).__init__()
-        # Number of input features is 16
-        self.layer_1 = nn.Linear(16, 10) 
-        self.layer_2 = nn.Linear(10, 10)
-        self.layer_out = nn.Linear(10, 1) 
+        # Number of input features is n
+        self.layer_1 = nn.Linear(n_features, 20) 
+        self.layer_2 = nn.Linear(20, 20)
+        self.layer_out = nn.Linear(20, 1) 
         
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=0.1)
-        self.batchnorm1 = nn.BatchNorm1d(10)
-        self.batchnorm2 = nn.BatchNorm1d(10)
+        self.batchnorm1 = nn.BatchNorm1d(20)
+        self.batchnorm2 = nn.BatchNorm1d(20)
         
     def forward(self, inputs):
         x = self.relu(self.layer_1(inputs))
@@ -89,19 +90,19 @@ def binary_acc(y_pred, y_test):
 def trainingLoop(train_loader, model, class_weights):
 
 
-    learning_rate = 1e-2
+    learning_rate = 1e-3
 
-    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([2.2]), reduction='mean')
+    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([0.65]), reduction='mean')
     # criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     # criterion= nn.CrossEntropyLoss(weight=class_weights,reduction='mean')
     # loss_weighted = criterion_weighted(x, y)
 
-    n_epochs = 200
+    n_epochs = 300
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    early_stopper = EarlyStopper(patience=1000, min_delta=0.01)
+    early_stopper = EarlyStopper(patience=10, min_delta=0.01)
 
     for epoch in range(n_epochs):
         epoch_loss = 0
@@ -146,13 +147,17 @@ def test_model(test_loader, model):
 # Prepare the dataset
 df = pd.read_csv("Data/export.csv")
 
-X = df.drop(columns=["histopathology"])
+# X = df.drop(columns=["histopathology"])
+X = df.drop(df.iloc[:, 10:], axis=1)
 y = df["histopathology"]
 mapa = {'SQUAMOUS': 1, 'OTHER': 0}
 y = y.map(mapa)
 
 print(X.shape)
 print(y.shape)
+print(y.value_counts())
+
+print(y)
 
 # Split the dataset into train and validation sets
 X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
@@ -169,9 +174,12 @@ class_weights=class_weight.compute_class_weight(class_weight='balanced',classes=
 class_weights=torch.tensor(class_weights,dtype=torch.float)
 print(class_weights)
 
-model = BinaryClassification()
+model = BinaryClassification(10)
 
 trainingLoop(train_loader, model, class_weights)
 preds = test_model(test_loader, model)
 
-print(confusion_matrix(y_val, preds))
+cm = confusion_matrix(y_val, preds)
+disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+disp.plot()
+plt.show()
