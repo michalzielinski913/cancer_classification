@@ -16,6 +16,10 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import confusion_matrix, classification_report, ConfusionMatrixDisplay
 from sklearn.utils import class_weight
+from sklearn.metrics import roc_curve
+from sklearn.metrics import RocCurveDisplay
+from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import PrecisionRecallDisplay
 
 class EarlyStopper:
     def __init__(self, patience=1, min_delta=0):
@@ -38,6 +42,7 @@ class BinaryClassification(nn.Module):
     def __init__(self, n_features, n_neurons):
         super(BinaryClassification, self).__init__()
         # Number of input features is n
+        # half_neurons = (int)n_neurons/2
         self.layer_1 = nn.Linear(n_features, n_neurons) 
         self.layer_2 = nn.Linear(n_neurons, n_neurons)
         self.layer_out = nn.Linear(n_neurons, 1) 
@@ -45,7 +50,7 @@ class BinaryClassification(nn.Module):
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=0.1)
         self.batchnorm1 = nn.BatchNorm1d(n_neurons)
-        self.batchnorm2 = nn.BatchNorm1d(n_neurons)
+        self.batchnorm2 = nn.BatchNorm1d(n_neurons/2)
         
     def forward(self, inputs):
         x = self.relu(self.layer_1(inputs))
@@ -203,7 +208,7 @@ if __name__ == '__main__':
     df = pd.read_csv("Data/export.csv")
 
     study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler(seed=42))
-    study.optimize(objective, n_trials=50)
+    study.optimize(objective, n_trials=20)
     # Print the best parameters found
     print("Best parameters found: ", study.best_params)
     best_model = saved_models[study.best_trial.number]
@@ -226,13 +231,46 @@ if __name__ == '__main__':
     train_data = TrainData(torch.FloatTensor(X_train.to_numpy()), 
                         torch.FloatTensor(y_train.to_numpy()))
 
+    train_data_flat = TestData(torch.FloatTensor(X_train.to_numpy()))
+    train_loader_flat = DataLoader(dataset=train_data_flat, batch_size=1)
+
     test_data = TestData(torch.FloatTensor(X_val.to_numpy()))
 
     train_loader = DataLoader(dataset=train_data, batch_size=10, shuffle=True)
     test_loader = DataLoader(dataset=test_data, batch_size=1)
 
-    preds = test_model(test_loader, best_model)
-    cm = confusion_matrix(y_val, preds)
+    preds_val = test_model(test_loader, best_model)
+    preds_train = test_model(train_loader_flat, best_model)
+
+    #confusion matrix
+    cm = confusion_matrix(y_val, preds_val)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm)
     disp.plot()
+    plt.savefig("confusion_matrix_val.jpg")
+    # plt.show()
+
+    cm = confusion_matrix(y_train, preds_train)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+    disp.plot()
+    plt.savefig("confusion_matrix_train.jpg")
+
+    fpr, tpr, _ = roc_curve(y_val, preds_val)
+    roc_display = RocCurveDisplay(fpr=fpr, tpr=tpr).plot()
+    plt.savefig("rog_curve_val.jpg")
+
+    fpr, tpr, _ = roc_curve(y_train, preds_train)
+    roc_display = RocCurveDisplay(fpr=fpr, tpr=tpr).plot()
+    plt.savefig("rog_curve_train.jpg")
+
+    prec, recall, _ = precision_recall_curve(y_val, preds_val)
+    pr_display = PrecisionRecallDisplay(precision=prec, recall=recall).plot()
+    plt.savefig("recall_curve_val.jpg")
+
+    prec, recall, _ = precision_recall_curve(y_train, preds_train)
+    pr_display = PrecisionRecallDisplay(precision=prec, recall=recall).plot()
+    plt.savefig("recall_curve_train.jpg")
+
     plt.show()
+
+    #save the model
+    torch.save(best_model.state_dict(), "./best_model.pth")
