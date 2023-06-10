@@ -28,16 +28,15 @@ def select_k_best_features(df, k):
     feature_names = X.columns[mask]
     return feature_names
 
-# Usage:
-feature_names = select_k_best_features
 
+if __name__=="__main__":
 
-df=pd.read_csv("Data/cancer_cleaned.csv", sep=",")
-y = df["histopathology"]
+    df=pd.read_csv("Data/cancer_cleaned.csv", sep=",")
+    y = df["histopathology"]
 
-train_df, validate_df=train_validate_split(df)
-feature_names = select_k_best_features(train_df, k=16)
-df_new = pd.DataFrame(df, columns=feature_names)
-df_new["histopathology"] = y.values
+    train_df, validate_df=train_validate_split(df)
+    feature_names = select_k_best_features(train_df, k=16)
+    df_new = pd.DataFrame(df, columns=feature_names)
+    df_new["histopathology"] = y.values
 
-df_new.to_csv("Data/export.csv", index=False)
+    df_new.to_csv("Data/export.csv", index=False)
