@@ -5,13 +5,66 @@ from sklearn import metrics
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.svm import SVC
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import classification_report
+from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.preprocessing import LabelEncoder
 
-# Load the preprocessed dataset
+
+def feature_selection(X, y, n_features):
+    
+    # Feature selection using SelectKBest and f_classif scoring function
+    selector = SelectKBest(f_classif, k=n_features)
+    selector.fit(X, y)
+   
+    selected_features = X.columns[selector.get_support()]
+
+    return selected_features
+
+def train_classifier(X_train, X_test, y_train, y_test):
+    # SVM model
+    svm_model = SVC(kernel='sigmoid', gamma='scale', C=3)
+    svm_model.fit(X_train, y_train)
+
+    # Prediction
+    y_pred = svm_model.predict(X_test)
+
+    # Confusion matrix
+    cm = confusion_matrix(y_test, y_pred)
+    confusion_matrix_plot(cm)
+
+    # Accuracy
+    accuracy = metrics.accuracy_score(y_test, y_pred)
+    print("Accuracy:", accuracy)
+
+    # Cross-validation
+    cv_scores = cross_val_score(svm_model, X_train, y_train, cv=5)
+    print("Cross-validation scores:", cv_scores)
+    print("Average cross-validation score:", cv_scores.mean())
+
+def confusion_matrix_plot(matrix):
+    total_samples = matrix.sum(axis=1, keepdims=True)
+
+    percentage_matrix = (matrix / total_samples) * 100
+
+    class_names = ['OTHER', 'SQUAMOUS']
+    plt.figure(figsize=(10, 7))
+    sns.heatmap(matrix, annot=False, fmt='.2f', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
+
+    # Adding the counts on top of the percentages
+    for i in range(len(class_names)):
+        for j in range(len(class_names)):
+            percentage = f'{percentage_matrix[i, j]:.2f}%'
+            plt.text(j + 0.5, i + 0.5, f'{matrix[i, j]}\n\n{percentage}', ha='center', va='center')
+
+    plt.xlabel('Predicted')
+    plt.ylabel('Truth')
+    plt.show()
+
+# Dataset preperation
 df = pd.read_csv("Data/export.csv")
 
-# Separate the features and labels
+encoder = LabelEncoder()
+df['histopathology'] = encoder.fit_transform(df['histopathology'])
+
 X = df.drop(columns=["histopathology"])
 y = df["histopathology"]
 
@@ -23,34 +76,4 @@ print('Selected features:', X.columns)
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.80, random_state=42, stratify=df['histopathology'])
 
-# Scale the features
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
-
-# Create an SVM classifier
-svm = SVC()
-
-# Define the parameter grid for grid search
-param_grid = {
-    'C': [0.1, 1, 10],
-    'gamma': [0.1, 1, 'scale', 'auto'],
-    'kernel': ['linear', 'rbf']
-}
-
-# Perform grid search with cross-validation
-grid_search = GridSearchCV(svm, param_grid, cv=5)
-grid_search.fit(X_train_scaled, y_train)
-
-# Get the best model
-best_svm = grid_search.best_estimator_
-
-# Make predictions on the test set
-y_pred = best_svm.predict(X_test_scaled)
-
-# Evaluate the model
-report = classification_report(y_test, y_pred)
-print(report)
-
-# Print the best parameters found by grid search
-print("Best Parameters:", grid_search.best_params_)
+train_classifier(X_train, X_test, y_train, y_test)
