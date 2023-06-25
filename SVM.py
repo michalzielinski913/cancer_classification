@@ -1,6 +1,7 @@
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+from sklearn import metrics
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.svm import SVC
@@ -10,46 +11,55 @@ from sklearn.preprocessing import LabelEncoder
 
 def feature_selection(X, y, n_features):
     
-    # Perform feature selection using SelectKBest and f_classif scoring function
+    # Feature selection using SelectKBest and f_classif scoring function
     selector = SelectKBest(f_classif, k=n_features)
     selector.fit(X, y)
-
-    # Get the selected features
-    
+   
     selected_features = X.columns[selector.get_support()]
 
     return selected_features
 
 def train_classifier(X_train, X_test, y_train, y_test):
-    # Create SVM model
-    svm_model = SVC()
-
-    # Fit the model to the training data
+    # SVM model
+    svm_model = SVC(kernel='sigmoid', gamma='scale', C=3)
     svm_model.fit(X_train, y_train)
 
-    # Make predictions on the test data
+    # Prediction
     y_pred = svm_model.predict(X_test)
 
-    # Create and display confusion matrix
+    # Confusion matrix
     cm = confusion_matrix(y_test, y_pred)
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, cmap='Blues')
-    plt.xlabel('Predicted')
-    plt.ylabel('Actual')
-    plt.title('Confusion Matrix')
-    plt.show()
+    confusion_matrix_plot(cm)
 
-    # Calculate accuracy
-    accuracy = (y_pred == y_test).mean()
+    # Accuracy
+    accuracy = metrics.accuracy_score(y_test, y_pred)
     print("Accuracy:", accuracy)
 
-    # Perform cross-validation
+    # Cross-validation
     cv_scores = cross_val_score(svm_model, X_train, y_train, cv=5)
     print("Cross-validation scores:", cv_scores)
     print("Average cross-validation score:", cv_scores.mean())
 
+def confusion_matrix_plot(matrix):
+    total_samples = matrix.sum(axis=1, keepdims=True)
 
-# Prepare the dataset
+    percentage_matrix = (matrix / total_samples) * 100
+
+    class_names = ['OTHER', 'SQUAMOUS']
+    plt.figure(figsize=(10, 7))
+    sns.heatmap(matrix, annot=False, fmt='.2f', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
+
+    # Adding the counts on top of the percentages
+    for i in range(len(class_names)):
+        for j in range(len(class_names)):
+            percentage = f'{percentage_matrix[i, j]:.2f}%'
+            plt.text(j + 0.5, i + 0.5, f'{matrix[i, j]}\n\n{percentage}', ha='center', va='center')
+
+    plt.xlabel('Predicted')
+    plt.ylabel('Truth')
+    plt.show()
+
+# Dataset preperation
 df = pd.read_csv("Data/export.csv")
 
 encoder = LabelEncoder()
@@ -64,6 +74,6 @@ X = df[selected_features]
 y = df["histopathology"]
 print('Selected features:', X.columns)
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.80, random_state=42, stratify=df['histopathology'])
 
 train_classifier(X_train, X_test, y_train, y_test)
