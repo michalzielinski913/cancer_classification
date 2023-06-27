@@ -59,7 +59,7 @@ def confusion_matrix_plot(matrix):
     plt.ylabel('Truth')
     plt.show()
 
-# Dataset preperation
+# Dataset preparation
 df = pd.read_csv("Data/export.csv")
 
 encoder = LabelEncoder()
@@ -68,12 +68,15 @@ df['histopathology'] = encoder.fit_transform(df['histopathology'])
 X = df.drop(columns=["histopathology"])
 y = df["histopathology"]
 
-selected_features = feature_selection(X, y, n_features=5)  # Change the value of n_features as desired
-
-X = df[selected_features]
-y = df["histopathology"]
-print('Selected features:', X.columns)
-
+# Split the data into training and testing sets
 X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.80, random_state=42, stratify=df['histopathology'])
+
+# Perform feature selection on the training data only
+selected_features = feature_selection(X_train, y_train, n_features=5)  # Change the value of n_features as desired
+
+X_train = X_train[selected_features]
+X_test = X_test[selected_features]
+
+print('Selected features:', X_train.columns)
 
 train_classifier(X_train, X_test, y_train, y_test)
